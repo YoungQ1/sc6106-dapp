@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ethereum DApp</title>
+<style>
+:root{font-family:Arial,Helvetica,sans-serif;color:#151515;background:#fff}
+*{box-sizing:border-box}
+body{min-height:100vh;margin:0;display:grid;place-items:center;padding:1.25rem;background:#f4f5f7}
+.container{width:min(100%,32rem);padding:clamp(1.5rem,7vw,3.5rem);background:#fff;border-radius:.75rem;box-shadow:0 4px 20px #18233320}
+h2{margin:0 0 1.25rem;font-size:1.75rem}
+label{display:block;margin:0 0 .9rem;font-weight:600}
+input{display:block;width:100%;margin-top:.35rem;border:1px solid #888;padding:.55rem;font:inherit;font-weight:400}
+button,.btn{display:inline-block;font:inherit;cursor:pointer;padding:.55rem .95rem;border:1px solid #0755b8;border-radius:.3rem;background:#0962cf;color:#fff;text-decoration:none}
+button:hover:not(:disabled),.btn:hover{background:#084fa7}
+button:focus-visible,.btn:focus-visible{outline:3px solid #8cbcff;outline-offset:2px}
+button:disabled{cursor:wait}
+.actions{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1rem}
+nav{margin-top:1rem}
+#menu{text-align:center}
+#menu .actions{display:grid;gap:1rem;margin:1.75rem auto 0;max-width:21rem}
+#menu .btn{padding:.85rem 1rem;background:#0878dc;border-color:#0878dc}
+#menu .btn:hover{background:#065cae}
+output{display:block;margin-top:1rem;overflow-wrap:anywhere}
+output[data-error="true"]{color:#9c2424}
+dt{font-weight:bold}dd{margin:.25rem 0 .75rem;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main class="container">
+
+<section id="home" hidden>
+  <h2>Web3</h2>
+  <form id="welcome">
+    <label for="name">Enter your name</label>
+    <input id="name" autocomplete="name" required>
+    <div class="actions"><button>Enter</button></div>
+  </form>
+</section>
+<section id="menu">
+  <h2 id="greeting">Main</h2>
+  <div class="actions"><a class="btn" href="#transfer">Transfer Money</a><a class="btn" href="#store">Store Money</a><a class="btn" href="#home">Exit</a></div>
+</section>
+<section id="transfer" hidden>
+
+  <h2>Ethereum DApp</h2>
+
+  <form id="payment">
+    <label for="payer">Payer</label>
+    <input id="payer" placeholder="Enter payer address" spellcheck="false" required>
+    <label for="payee">Payee</label>
+    <input id="payee" placeholder="Enter payee address" spellcheck="false" required>
+    <label for="amount">Amount</label>
+    <input id="amount" placeholder="Enter amount to transfer" inputmode="numeric" pattern="[0-9]+" required>
+    <div class="actions">
+      <button id="send" class="btn">Transfer</button>
+      <button id="read" class="btn" type="button">Transaction</button>
+    </div>
+  </form>
+  <nav><a class="btn" href="#menu">Main</a></nav>
+  <output id="status" role="status" aria-live="polite"></output>
+  <dl id="result" hidden>
+    <dt>Payer</dt><dd id="view_payer"></dd>
+    <dt>Payee</dt><dd id="view_payee"></dd>
+    <dt>Amount</dt><dd id="view_amount"></dd>
+  </dl>
+</section>
+<section id="store" hidden>
+  <h2>Store Money</h2>
+  <form id="storage">
+    <label for="storeAddress">Store Money contract address</label>
+    <input id="storeAddress" placeholder="0x…" spellcheck="false" required>
+    <label for="storeAmount">Amount</label>
+    <input id="storeAmount" placeholder="Enter amount" inputmode="numeric" pattern="[0-9]+" required>
+    <div class="actions">
+      <button id="storeSend">Store Value</button>
+      <button id="storeRead" type="button">Retrieve Value</button>
+    </div>
+  </form>
+  <nav><a class="btn" href="#menu">Main</a></nav>
+  <output id="storeStatus" role="status" aria-live="polite"></output>
+</section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/web3@1.5.2/dist/web3.min.js"></script>
+<script>
+const contractAddress = '0xc8c412e2681ba35b1ef504bdd42323f471b5ea78';
+const contractABI = [
+  {type:'function', name:'transfer', stateMutability:'nonpayable', outputs:[], inputs:[
+    {name:'_payer', type:'address'}, {name:'_payee', type:'address'}, {name:'_amount', type:'uint256'}
+  ]},
+  {type:'function', name:'transaction', stateMutability:'view', inputs:[], outputs:[
+    {name:'', type:'address'}, {name:'', type:'address'}, {name:'', type:'uint256'}
+  ]}
+];
+const element = id => document.getElementById(id);
+const pages = ['home', 'menu', 'transfer', 'store'];
+
+function showPage() {
+  const route = location.hash.slice(1);
+  for (const page of pages) element(page).hidden = page !== (pages.includes(route) ? route : 'menu');
+  if (route === 'home') {
+    element('welcome').reset();
+    element('greeting').textContent = 'Main';
+  }
+}
+window.addEventListener('hashchange', showPage);
+showPage();
+
+element('welcome').addEventListener('submit', event => {
+  event.preventDefault();
+  const name = element('name').value.trim();
+  if (!name) return;
+  location.hash = 'menu';
+});
+
+function showStatus(message, isError = false) {
+  const status = element('status');
+  status.textContent = message;
+  status.dataset.error = String(isError);
+}
+
+async function run(action) {
+  element('send').disabled = true;
+  element('read').disabled = true;
+  element('result').hidden = true;
+  try {
+    if (!window.Web3) throw new Error('Web3 failed to load. Check your connection and refresh.');
+    if (!window.ethereum) throw new Error('Open this page in a browser with MetaMask or a compatible wallet.');
+    const web3 = new Web3(window.ethereum);
+    await action(web3);
+  } catch (error) {
+    showStatus(error.code === 4001 ? 'Wallet request cancelled.' : (error.message || 'Request failed.'), true);
+  } finally {
+    element('send').disabled = false;
+    element('read').disabled = false;
+  }
+}
+
+async function getContract(web3, address = contractAddress, abi = contractABI) {
+  const chainId = await web3.eth.getChainId();
+  const code = await web3.eth.getCode(address);
+  if (!code || code === '0x') {
+    throw new Error('No contract at this address on chain ' + chainId + '. Switch to the contract network in your wallet.');
+  }
+  return new web3.eth.Contract(abi, address);
+}
+
+element('payment').addEventListener('submit', event => {
+  event.preventDefault();
+  run(async web3 => {
+    const payer = element('payer').value.trim();
+    const payee = element('payee').value.trim();
+    const amount = element('amount').value.trim();
+    if (!web3.utils.isAddress(payer) || !web3.utils.isAddress(payee)) {
+      throw new Error('Enter valid Ethereum addresses for the payer and payee.');
+    }
+    if (!/^[0-9]+$/.test(amount) || BigInt(amount) >= (1n << 256n)) {
+      throw new Error('Enter a non-negative whole number within the uint256 range.');
+    }
+    showStatus('Approve the connection in your wallet.');
+    const [sender] = await window.ethereum.request({method: 'eth_requestAccounts'});
+    if (!sender) throw new Error('The wallet did not provide an account.');
+    const contract = await getContract(web3);
+    showStatus('Review and confirm the transaction in your wallet.');
+    const receipt = await contract.methods.transfer(payer, payee, amount).send({from: sender});
+    showStatus('Transaction confirmed. Hash ' + receipt.transactionHash);
+  });
+});
+
+element('read').addEventListener('click', () => {
+  run(async web3 => {
+    showStatus('Reading transaction…');
+    const contract = await getContract(web3);
+    const result = await contract.methods.transaction().call();
+    element('view_payer').textContent = result[0];
+    element('view_payee').textContent = result[1];
+    element('view_amount').textContent = result[2];
+    element('result').hidden = false;
+    showStatus('Transaction loaded.');
+  });
+});
+const storeABI = [
+  {type:'function', name:'deposit_money', stateMutability:'nonpayable', outputs:[], inputs:[
+    {name:'customer_input', type:'address'}, {name:'amount', type:'uint256'}
+  ]},
+  {type:'function', name:'deposit_view', stateMutability:'view', inputs:[], outputs:[
+    {name:'', type:'address'}, {name:'', type:'uint256'}
+  ]}
+];
+
+async function useStorage(write) {
+  const status = element('storeStatus');
+  const send = element('storeSend');
+  const read = element('storeRead');
+  send.disabled = read.disabled = true;
+  status.dataset.error = 'false';
+  status.textContent = 'Checking contract…';
+  try {
+    if (!window.Web3 || !window.ethereum) throw new Error('Open this page with MetaMask and check your connection.');
+    const web3 = new Web3(window.ethereum);
+    const address = element('storeAddress').value.trim();
+    if (!web3.utils.isAddress(address)) throw new Error('Enter the deployed Store Money contract address.');
+    const contract = await getContract(web3, address, storeABI);
+    if (write) {
+      const amount = element('storeAmount').value.trim();
+      if (!/^[0-9]+$/.test(amount) || BigInt(amount) >= (1n << 256n)) {
+        throw new Error('Enter a non-negative whole number within the uint256 range.');
+      }
+      status.textContent = 'Confirm the transaction in your wallet.';
+      const [customer] = await window.ethereum.request({method:'eth_requestAccounts'});
+      if (!customer) throw new Error('The wallet did not provide an account.');
+      const receipt = await contract.methods.deposit_money(customer, amount).send({from:customer});
+      status.textContent = 'Value stored. Transaction hash ' + receipt.transactionHash;
+    } else {
+      const result = await contract.methods.deposit_view().call();
+      status.textContent = 'Customer: ' + result[0] + ' | Stored Value: ' + result[1];
+    }
+  } catch (error) {
+    status.dataset.error = 'true';
+    status.textContent = error.code === 4001 ? 'Wallet request cancelled.' : error.message;
+  } finally {
+    send.disabled = read.disabled = false;
+  }
+}
+
+element('storage').addEventListener('submit', event => {
+  event.preventDefault();
+  useStorage(true);
+});
+element('storeRead').addEventListener('click', () => useStorage(false));
+</script>
+</body>
+</html>
+
+
+
